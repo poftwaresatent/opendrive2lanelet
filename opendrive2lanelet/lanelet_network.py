@@ -3,6 +3,8 @@
 """Module to enhance LaneletNetwork class
 so it can be used for conversion from the opendrive format."""
 
+
+from typing import Tuple, List
 from queue import Queue
 import numpy as np
 
@@ -17,25 +19,37 @@ __maintainer__ = "Benjamin Orthen"
 __email__ = "commonroad-i06@in.tum.de"
 __status__ = "Released"
 
-optimal_join_split_factor = 15
-
 
 class ConversionLaneletNetwork(LaneletNetwork):
     """Add functions to LaneletNetwork which
     further enable it to modify its Lanelets."""
 
-    def remove_lanelet(self, lanelet_id: str):
+    def remove_lanelet(self, lanelet_id: str, remove_references: bool = False):
         """Remove a lanelets with the specific lanelet_id
         from the _lanelets dict.
 
         Args:
           lanelet_id: id of lanelet to be removed.
+          remove_references: Also remove references which point to to be removed lanelet.
 
         Returns:
           None
 
         """
         del self._lanelets[lanelet_id]
+        if remove_references:
+            for lanelet in self.lanelets:
+                lanelet.predecessor[:] = [
+                    pred for pred in lanelet.predecessor if pred != lanelet_id
+                ]
+
+                lanelet.successor[:] = [
+                    succ for succ in lanelet.successor if succ != lanelet_id
+                ]
+                if lanelet.adj_right == lanelet_id:
+                    lanelet.adj_right = None
+                if lanelet.adj_left == lanelet_id:
+                    lanelet.adj_left = None
 
     def find_lanelet_by_id(self, lanelet_id) -> ConversionLanelet:
         """Find a lanelet for a given lanelet_id.
@@ -91,7 +105,7 @@ class ConversionLaneletNetwork(LaneletNetwork):
                     if adj_left:
                         adj_left.adj_right = lanelet.adj_right
 
-                self.remove_lanelet(lanelet.lanelet_id)
+                self.remove_lanelet(lanelet.lanelet_id, remove_references=True)
 
     def update_lanelet_id_references(self, old_id: str, new_id: str):
         """Update all references to the old lanelet_id with the new_lanelet_id.
@@ -167,10 +181,9 @@ class ConversionLaneletNetwork(LaneletNetwork):
 
         Args:
           lanelet_pairs: List with tuples of lanelet_ids which should be concatenated.
-          lanelet_pairs: list:
 
         Returns:
-          : Dict with information which lanelet_id was converted to a new one.
+          Dict with information which lanelet_id was converted to a new one.
 
         """
 
@@ -195,15 +208,14 @@ class ConversionLaneletNetwork(LaneletNetwork):
         return new_lanelet_ids
 
     def join_and_split_possible_lanes(self):
-        """
+        """Move lanelet boundaries for lanelet splits or joins.
+
         This method provides the functionality to modify the lane boundaries if
         a lane merges into another lane or splits from another lane.
-
         """
-
         # Condition for lane merge:
         # left and right vertices at end or beginning are the same
-        join_and_split_lanelets = []
+        js_targets = []
         for lanelet in self.lanelets:
 
             lanelet_split, lanelet_join = False, False
@@ -218,414 +230,14 @@ class ConversionLaneletNetwork(LaneletNetwork):
                 lanelet_join = True
 
             if lanelet_join or lanelet_split:
-                join_and_split_lanelets.append(
-                    {
-                        "lanelet": lanelet,
-                        "is_split": lanelet_split,
-                        "is_join": lanelet_join,
-                    }
+                js_targets.append(
+                    _JoinSplitTarget(self, lanelet, lanelet_split, lanelet_join)
                 )
 
-        self._determine_js_adjacent_lanelet(join_and_split_lanelets)
-        # list of ids of lanelets which are joined into/splitted from
-        # used to avoid changing their boundaries
-        global_adjacent_lanelets = [
-            x.get("adjacent_lanelet").lanelet_id for x in join_and_split_lanelets
-        ]
-        for js_target in join_and_split_lanelets:
-            lanelet = js_target.get("lanelet")
-            if js_target.get("is_split"):
-                self._perform_split_or_join(
-                    True, js_target, global_adjacent_lanelets=global_adjacent_lanelets
-                )
-                if js_target.get("is_join"):
-                    left_vertices = lanelet.left_vertices
-                    right_vertices = lanelet.right_vertices
-                    center_vertices = lanelet.center_vertices
-
-            if js_target.get("is_join"):
-                self._perform_split_or_join(
-                    False, js_target, global_adjacent_lanelets=global_adjacent_lanelets
-                )
-
-            if js_target.get("is_join") and js_target.get("is_split"):
-                half_length = int(left_vertices[:, 0].size / 2)
-                lanelet.left_vertices = np.vstack(
-                    (
-                        left_vertices[:half_length, :],
-                        lanelet.left_vertices[half_length:, :],
-                    )
-                )
-                lanelet.right_vertices = np.vstack(
-                    (
-                        right_vertices[:half_length, :],
-                        lanelet.right_vertices[half_length:, :],
-                    )
-                )
-                lanelet.center_vertices = np.vstack(
-                    (
-                        center_vertices[:half_length, :],
-                        lanelet.center_vertices[half_length:, :],
-                    )
-                )
-
-    def _determine_js_adjacent_lanelet(self, join_and_split_lanelets: list):
-        """Determine the neighbor which should be used for the join/split operation.
-
-        I.e. the neighbor where the lanelet joins into and/or splits from.
-
-        Args:
-          join_and_split_lanelets: List of dicts which contain the lanelets
-            and information about whether it is a join and/or a split.
-
-        Note:
-          Not yet implemented is the option that the lanelet can join into both
-          or split from both neighbors. Now the left adjacent neighbor is preferred
-          if possible.
-        """
-
-        # checked_lanelets is the check whether adjacent_lanelet
-        # which will be used to join/split is a direct neighbor
-        # of the lanelet or not
-        for js_target in join_and_split_lanelets:
-            lanelet = js_target.get("lanelet")
-            adjacent_lanelets = Queue()
-            checked_lanelets = 0
-            if lanelet.adj_left is not None and lanelet.adj_left_same_direction:
-                adjacent_lanelets.put(
-                    {"lanelet_id": lanelet.adj_left, "linking_side": "right"}
-                )
-                checked_lanelets -= 1
-            if lanelet.adj_right is not None and lanelet.adj_right_same_direction:
-                adjacent_lanelets.put(
-                    {"lanelet_id": lanelet.adj_right, "linking_side": "left"}
-                )
-                checked_lanelets -= 1
-
-            while adjacent_lanelets.qsize() > 0:
-                self._check_next_adj_lanelet(js_target, adjacent_lanelets)
-                checked_lanelets += 1
-
-                if checked_lanelets > 0:
-                    js_target["single_lanelet_operation"] = True
-                if js_target.get("linking_side"):
-                    # found appropriate adjacent lanelet
-                    break
-
-        join_and_split_lanelets[:] = [
-            x for x in join_and_split_lanelets if x.get("linking_side")
-        ]
-
-    def _check_next_adj_lanelet(self, js_target: dict, adjacent_lanelets: Queue):
-        """Check if an adjacent lanelet is able to function as
-        the lanelet which can be split from / joined into.
-
-        If this is not the case (width is not greater 0), try to add next neighbor in same
-        direction to adjacent_lanelets queue.
-
-        Args:
-          js_target: Dict containing information about the lanelet
-            and whether it is a join or split.
-          adj_target: Containing id of next potential adjacent lanelet
-            and the side where it is linked to the splitting / joining
-            lanelet.
-        """
-        adj_target = adjacent_lanelets.get()
-        adj_lanelet = self.find_lanelet_by_id(adj_target.get("lanelet_id"))
-        if not adj_lanelet:
-            return
-        linking_side = adj_target.get("linking_side")
-        for option in ["is_split", "is_join"]:
-            if js_target.get(option):
-                adj_width = (
-                    adj_lanelet.calc_width_at_start()
-                    if option == "is_split"
-                    else adj_lanelet.calc_width_at_end()
-                )
-                if adj_width > 0:
-                    js_target["linking_side"] = linking_side
-                    js_target[option[3::] + "_adj_width"] = adj_width
-                    js_target["adjacent_lanelet"] = adj_lanelet
-                else:
-                    next_adj_neighbor = (
-                        adj_lanelet.adj_left
-                        if linking_side == "right"
-                        else adj_lanelet.adj_right
-                    )
-                    if next_adj_neighbor:
-                        adjacent_lanelets.put(
-                            {
-                                "lanelet_id": next_adj_neighbor,
-                                "linking_side": linking_side,
-                            }
-                        )
-
-    def _perform_split_or_join(
-        self, is_split: bool, js_target: dict, global_adjacent_lanelets: list
-    ):
-        """Helper function to simplify split or join algorithm.
-
-        Selects proper attributes depending on the scenario.
-
-        Args:
-          lanelet: Lanelet on which to perform algorithm.
-          is_split: True if lanelet is splitting from other lanelet, else False
-            if it is a join.
-          global_adjacent_lanelets: Containing ids of all adjacent lanelets
-            which are used to split from / join into.
-        """
-        lanelet = js_target.get("lanelet")
-
-        adj_lanelet = js_target.get("adjacent_lanelet")
-        split_and_join = js_target.get("is_split") and js_target.get("is_join")
-        change_pos, change_width = lanelet.optimal_join_split_values(
-            is_split=is_split, split_and_join=split_and_join
-        )
-        if is_split:
-            self._perform_split_lanelets(
-                js_target, change_pos, change_width, global_adjacent_lanelets
-            )
-            self.add_predecessors_to_lanelet(lanelet, adj_lanelet.predecessor)
-        else:
-            self._perform_join_lanelets(
-                js_target, change_pos, change_width, global_adjacent_lanelets
-            )
-            self.add_successors_to_lanelet(lanelet, adj_lanelet.successor)
-
-    def _perform_split_lanelets(
-        self, js_target, change_pos, change_width, global_adjacent_lanelets
-    ):
-        adj_width = js_target.get("split_adj_width")
-        lanelet = js_target.get("lanelet")
-        optimal_split_pos = optimal_join_split_factor * adj_width
-        if (
-            change_pos == lanelet.length
-            and optimal_split_pos > change_pos
-            and not js_target.get("single_lanelet_operation")
-        ):
-            change_lanelets = [lanelet]
-            change_length = [0, lanelet.length]
-            adjacent_lanelets = [js_target.get("adjacent_lanelet")]
-
-            while change_length[-1] < optimal_split_pos:
-                lane = change_lanelets[-1]
-                adjacent_lanelet = adjacent_lanelets[-1]
-                if (
-                    self.successor_is_neighbor_of_neighbors_successor(lane)
-                    and lane.successor[0] not in global_adjacent_lanelets
-                ):
-                    successor = self.find_lanelet_by_id(lane.successor[0])
-                    # break if width is smaller in next lanelet
-                    if successor.calc_width_at_start() < lane.calc_width_at_end():
-                        break
-                    adj_successor = self.find_lanelet_by_id(
-                        adjacent_lanelet.successor[0]
-                    )
-                    change_length.append(successor.length + change_length[-1])
-                    change_lanelets.append(successor)
-                    adjacent_lanelets.append(adj_successor)
-                else:
-                    break
-            algo_list = []
-            if optimal_split_pos > change_length[-1]:
-                new_change_width = change_lanelets[-1].calc_width_at_end()
-                for i, lane in enumerate(change_lanelets):
-                    [dist_start, dist_end] = np.interp(
-                        [0 + change_length[i], lane.length + change_length[i]],
-                        [0, change_length[-1]],
-                        [adj_width, new_change_width],
-                    )
-                    algo_list.append(
-                        (
-                            lane,
-                            [0, lane.length],
-                            [dist_start, dist_end],
-                            adjacent_lanelets[i],
-                        )
-                    )
-
-            else:
-                end_pos = optimal_split_pos - change_length[-2]
-                new_change_width = change_lanelets[-1].calc_width(end_pos)
-                for i, lane in enumerate(change_lanelets[:-1:]):
-                    [dist_start, dist_end] = np.interp(
-                        [0 + change_length[i], lane.length + change_length[i]],
-                        [0, optimal_split_pos],
-                        [adj_width, new_change_width],
-                    )
-                    algo_list.append(
-                        (
-                            lane,
-                            [0, lane.length],
-                            [dist_start, dist_end],
-                            adjacent_lanelets[i],
-                        )
-                    )
-
-                # for last lanelet
-                [dist_start] = np.interp(
-                    [0 + change_length[-2]],
-                    [0, optimal_split_pos],
-                    [adj_width, new_change_width],
-                )
-                algo_list.append(
-                    (
-                        change_lanelets[-1],
-                        [0, end_pos],
-                        [dist_start, new_change_width],
-                        adjacent_lanelets[-1],
-                    )
-                )
-        else:
-            algo_list = [
-                (
-                    lanelet,
-                    [0, change_pos],
-                    [adj_width, change_width],
-                    js_target.get("adjacent_lanelet"),
-                )
-            ]
-
-        self._move_borders_of_lanelets(algo_list, js_target.get("linking_side"))
-
-    def _select_apt_join_lanelets(
-        self, js_target, optimal_join_pos, global_adjacent_lanelets
-    ):
-        lanelet = js_target.get("lanelet")
-        change_lanelets = [lanelet]
-        change_length = [lanelet.length, 0]
-        adjacent_lanelets = [js_target.get("adjacent_lanelet")]
-
-        while change_length[-1] > optimal_join_pos:
-            lane = change_lanelets[-1]
-            adjacent_lanelet = adjacent_lanelets[-1]
-            if (
-                self.predecessor_is_neighbor_of_neighbors_predecessor(lane)
-                and lane.predecessor[0] not in global_adjacent_lanelets
-            ):
-                predecessor = self.find_lanelet_by_id(lane.predecessor[0])
-                adj_predecessor = self.find_lanelet_by_id(
-                    adjacent_lanelet.predecessor[0]
-                )
-                change_length.append(change_length[-1] - predecessor.length)
-                change_lanelets.append(predecessor)
-                adjacent_lanelets.append(adj_predecessor)
-            else:
-                break
-
-    def _perform_join_lanelets(
-        self, js_target, change_pos, change_width, global_adjacent_lanelets
-    ):
-        lanelet = js_target.get("lanelet")
-        adj_width = js_target.get("join_adj_width")
-        optimal_join_pos = lanelet.length - optimal_join_split_factor * adj_width
-        if (
-            change_pos == 0
-            and optimal_join_pos < change_pos
-            and not js_target.get("single_lanelet_operation")
-        ):
-            change_lanelets = [lanelet]
-            change_length = [lanelet.length, 0]
-            adjacent_lanelets = [js_target.get("adjacent_lanelet")]
-
-            while change_length[-1] > optimal_join_pos:
-                lane = change_lanelets[-1]
-                adjacent_lanelet = adjacent_lanelets[-1]
-                if (
-                    self.predecessor_is_neighbor_of_neighbors_predecessor(lane)
-                    and lane.predecessor[0] not in global_adjacent_lanelets
-                ):
-                    predecessor = self.find_lanelet_by_id(lane.predecessor[0])
-                    adj_predecessor = self.find_lanelet_by_id(
-                        adjacent_lanelet.predecessor[0]
-                    )
-                    change_length.append(change_length[-1] - predecessor.length)
-                    change_lanelets.append(predecessor)
-                    adjacent_lanelets.append(adj_predecessor)
-                else:
-                    break
-            algo_list = []
-
-            if optimal_join_pos < change_length[-1]:
-                new_change_width = change_lanelets[-1].calc_width_at_start()
-                for i, lane in enumerate(change_lanelets):
-                    [dist_start, dist_end] = np.interp(
-                        [0 + change_length[i + 1], lane.length + change_length[i + 1]],
-                        [change_length[-1], change_length[0]],
-                        [new_change_width, adj_width],
-                    )
-                    algo_list.append(
-                        (
-                            lane,
-                            [0, lane.length],
-                            [dist_start, dist_end],
-                            adjacent_lanelets[i],
-                        )
-                    )
-
-            else:
-                end_pos = optimal_join_pos - change_length[-1]
-                new_change_width = change_lanelets[-1].calc_width(end_pos)
-                for i, lane in enumerate(change_lanelets[:-1:]):
-                    [dist_start, dist_end] = np.interp(
-                        [0 + change_length[i + 1], lane.length + change_length[i + 1]],
-                        [optimal_join_pos, change_length[0]],
-                        [new_change_width, adj_width],
-                    )
-                    algo_list.append(
-                        (
-                            lane,
-                            [0, lane.length],
-                            [dist_start, dist_end],
-                            adjacent_lanelets[i],
-                        )
-                    )
-                # for last lanelet
-                [dist_end] = np.interp(
-                    [change_length[-2]],
-                    [optimal_join_pos, change_length[0]],
-                    [new_change_width, adj_width],
-                )
-                algo_list.append(
-                    (
-                        change_lanelets[-1],
-                        [end_pos, change_lanelets[-1].length],
-                        [new_change_width, dist_end],
-                        adjacent_lanelets[-1],
-                    )
-                )
-
-        else:
-            algo_list = [
-                (
-                    lanelet,
-                    [change_pos, lanelet.length],
-                    [change_width, adj_width],
-                    js_target.get("adjacent_lanelet"),
-                )
-            ]
-        self._move_borders_of_lanelets(algo_list, js_target.get("linking_side"))
-
-    def _move_borders_of_lanelets(self, algo_list: list, linking_side: str):
-        """Move borders of lanelets in algo_list.
-
-        Determine the adjacent lanelet before for each lanelet
-        because it is needed for boundary control of the move_border
-        function.
-
-        Args:
-          algo_list: List containing lanelets, distance and interval
-            of how the border should be moved.
-          linking_side: Indicates whether left or right border should
-            be moved.
-        """
-        for lanelet, mirror_interval, distance, adjacent_lanelet in algo_list:
-            lanelet.move_border(
-                mirror_border=linking_side,
-                mirror_interval=mirror_interval,
-                distance=distance,
-                adjacent_lanelet=adjacent_lanelet,
-            )
+        for js_target in js_targets:
+            js_target.determine_apt_js_pairs()
+            js_target.move_borders()
+            js_target.add_adjacent_predecessor_or_successor()
 
     def predecessor_is_neighbor_of_neighbors_predecessor(
         self, lanelet: "ConversionLanelet"
@@ -646,7 +258,9 @@ class ConversionLaneletNetwork(LaneletNetwork):
         predecessor = self.find_lanelet_by_id(lanelet.predecessor[0])
         return self.successor_is_neighbor_of_neighbors_successor(predecessor)
 
-    def add_successors_to_lanelet(self, lanelet: ConversionLanelet, successor_ids: str):
+    def add_successors_to_lanelet(
+        self, lanelet: ConversionLanelet, successor_ids: List[str]
+    ):
         """Add a successor to a lanelet, but add the lanelet also to the predecessor
         of the succesor.
 
@@ -660,7 +274,7 @@ class ConversionLaneletNetwork(LaneletNetwork):
             successor.predecessor.append(lanelet.lanelet_id)
 
     def add_predecessors_to_lanelet(
-        self, lanelet: ConversionLanelet, predecessor_ids: str
+        self, lanelet: ConversionLanelet, predecessor_ids: List[str]
     ):
         """Add a successor to a lanelet, but add the lanelet also to the predecessor
         of the succesor.
@@ -845,22 +459,63 @@ class ConversionLaneletNetwork(LaneletNetwork):
 
 
 class _JoinSplitTarget:
-    """Class to integrate transforming of lanelet borders due to joining / splitting."""
+    """Class to integrate joining/splitting of lanelet borders.
+
+    Provides methods to determine the lanelets with which the
+    join and/or split can be performed. Additionally a method to
+    change the borders of the determined lanelets.
+
+    Attributes:
+      main_lanelet (ConversionLanelet): Lanelet where split starts or join ends.
+      lanelet_network (ConversionLaneletNetwork): LaneletNetwork where join/split occurs.
+      _mode (int): Number denoting if join (0), split (1), or join and split (2) occurs.
+      change_width (float): Width at start of split or end of join.
+        Is list with two elements, [split_width, join_width] if _mode == 2
+      linking_side (str): Side on which the split/join happens (either "left" or "right")
+      _js_pairs (list): List of :class:`._JoinSplitPair` elements.
+      _single_lanelet_operation (bool): Indicates whether only one lanelet and
+        its adjacent lanelet can be used for the join/split.
+    """
 
     def __init__(
         self,
         lanelet_network: ConversionLaneletNetwork,
-        lanelet: ConversionLanelet,
+        main_lanelet: ConversionLanelet,
         split: bool,
         join: bool,
     ):
-        self.lanelet = lanelet
+        self.main_lanelet = main_lanelet
         self.lanelet_network = lanelet_network
-        self.split = split
-        self.join = join
+        if split and join:
+            self._mode = 2
+        elif split:
+            self._mode = 1
+        else:
+            self._mode = 0
+        self.change_width = None
         self.linking_side = None
-        self.adjacent_lanelet = None
+        self._js_pairs = []
+        self._single_lanelet_operation = False
 
+    @property
+    def split(self):
+        """Lanelet splits at start.
+
+        Returns:
+          True if lanelet splits from other lanelet at start.
+        """
+        return self._mode >= 1
+
+    @property
+    def join(self):
+        """Lanelet joins at end.
+
+        Returns:
+          True if lanelet joins to other lanelet at end.
+        """
+        return self._mode != 1
+
+    @property
     def split_and_join(self) -> bool:
         """Lanelet splits at start and joins at end.
 
@@ -869,6 +524,354 @@ class _JoinSplitTarget:
         """
         return self.split and self.join
 
-    def move_lanelet_borders(self):
-        """Move borders of lanelets for appropriate joins and splits."""
-        # TODO: implement this and use class to simplify code in ConversionLaneletNetwork
+    def use_only_single_lanelet(self) -> bool:
+        """Only single lanelet can be used for join/split.
+
+        Returns:
+          True if only one can be used.
+        """
+        return self._single_lanelet_operation and self.split_and_join
+
+    def _find_lanelet_by_id(self, lanelet_id: str) -> ConversionLanelet:
+        """Run :func:`.ConversionLaneletNetwork.find_lanelet_by_id` of self.lanelet_network.
+
+        Returns:
+          Lanelet matching the lanelet_id.
+        """
+        return self.lanelet_network.find_lanelet_by_id(lanelet_id)
+
+    def complete_js_interval_length(self) -> float:
+        """Calculate length of interval where join/split changes the border.
+
+        Returns:
+          Length of interval.
+        """
+        length = 0
+        for js_pair in self._js_pairs:
+            length += js_pair.change_interval[1] - js_pair.change_interval[0]
+
+        return length
+
+    def adjacent_width(self, is_split: bool) -> float:
+        """Get width of adjacent lanelet at start of split or end of join.
+
+        Returns:
+          Width of adjacent lanelet at start or end.
+        """
+        if is_split:
+            return self._js_pairs[0].adjacent_lanelet.calc_width_at_start()
+        return self._js_pairs[0].adjacent_lanelet.calc_width_at_end()
+
+    def add_adjacent_predecessor_or_successor(self):
+        """Add the predecessor or successor of the adjacent lanelet to the main lanelet.
+
+        This reflects that after the split, the main lanelet is also a successor
+        of the predecessor of its adjacent lanelet.
+        For a join, the main lanelet is a predecessor of the successor of its
+        adjacent lanelet.
+        """
+
+        if not self._js_pairs:
+            return
+        lanelet = self._js_pairs[0].lanelet
+        adjacent_lanelet = self._js_pairs[0].adjacent_lanelet
+        if self.split:
+            self.lanelet_network.add_predecessors_to_lanelet(
+                lanelet, adjacent_lanelet.predecessor
+            )
+
+        if self.join:
+            self.lanelet_network.add_successors_to_lanelet(
+                lanelet, adjacent_lanelet.successor
+            )
+
+    def move_borders(self):
+        """Move borders of lanelets to reflect the split/join.
+
+        All lanelet pairs in self._js_pairs are used for the border movement.
+        """
+
+        if not self._js_pairs:
+            return
+
+        if self.split_and_join:
+            self._move_borders_if_split_and_join()
+        else:
+            self._move_borders_if_split_or_join()
+
+    def _move_borders_if_split_or_join(self):
+        """Move borders of lanelets if it is not split and join.
+
+        Interpolate width interval for each js_pair.
+        Then move the borders of its lanelet.
+        """
+        length = self.complete_js_interval_length()
+        adj_width = self.adjacent_width(is_split=self.split)
+        if self.join:
+            js_pairs = list(reversed(self._js_pairs))
+            # norm running position so that running_pos + pos_start
+            # is at zero at first js_pair
+            running_pos = -1 * self._js_pairs[0].change_interval[0]
+            width_start = self.change_width
+            width_end = adj_width
+        else:
+            js_pairs = self._js_pairs
+            running_pos = 0
+            width_start = adj_width
+            width_end = self.change_width
+        for js_pair in js_pairs:
+            [pos_start, pos_end] = js_pair.change_interval
+            distance = np.interp(
+                [pos_start + running_pos, pos_end + running_pos],
+                [0, length],
+                [width_start, width_end],
+            )
+            js_pair.move_border(width=distance, linking_side=self.linking_side)
+            running_pos += pos_end - pos_start
+
+    def _move_borders_if_split_and_join(self):
+        """Move borders of lanelets if it is split and join.
+
+        Calculate the new vertices twice:
+        1. Only for the split (first pair in self._js_pairs)
+        2. Only for the join (second pair in self._js_pairs)
+        Then talk the first half of the vertices of the split and
+        the seconds half of the vertices of the join and merge them.
+        """
+        lanelet = self._js_pairs[0].lanelet
+
+        start_width_split = self.adjacent_width(is_split=True)
+        lanelet_split = self._js_pairs[0].move_border(
+            width=[start_width_split, self.change_width[0]],
+            linking_side=self.linking_side,
+        )
+        left_vertices = lanelet_split.left_vertices
+        right_vertices = lanelet_split.right_vertices
+        center_vertices = lanelet_split.center_vertices
+        start_width_join = self.adjacent_width(is_split=False)
+        self._js_pairs[1].move_border(
+            width=[self.change_width[1], start_width_join],
+            linking_side=self.linking_side,
+        )
+
+        # take first half of lanelet which does the split
+        # take second half of lanelet which does the join
+        half_length = int(left_vertices[:, 0].size / 2)
+        lanelet.left_vertices = np.vstack(
+            (left_vertices[:half_length, :], lanelet.left_vertices[half_length:, :])
+        )
+        lanelet.right_vertices = np.vstack(
+            (right_vertices[:half_length, :], lanelet.right_vertices[half_length:, :])
+        )
+        lanelet.center_vertices = np.vstack(
+            (center_vertices[:half_length, :], lanelet.center_vertices[half_length:, :])
+        )
+
+    def determine_apt_js_pairs(self):
+        """Determine pairs of lanelet and adjacent lanelet for the join/split.
+
+        Add lanelets as long as one of the break conditions is not matched.
+        The determined pairs are saved in self._js_pairs.
+        """
+        # for first lanelet
+        adjacent_lanelet = self._determine_main_adjacent_lanelet()
+        if not adjacent_lanelet:
+            return
+        lanelet = self.main_lanelet
+        while True:
+            algo_has_finished = self._add_join_split_pair(lanelet, adjacent_lanelet)
+            if algo_has_finished or self.use_only_single_lanelet():
+                break
+            if (
+                self.split
+                and self.lanelet_network.successor_is_neighbor_of_neighbors_successor(
+                    lanelet
+                )
+                # and lanelet.successor[0] not in global_adjacent_lanelets
+            ):
+                lanelet = self._find_lanelet_by_id(lanelet.successor[0])
+                adjacent_lanelet = self._find_lanelet_by_id(
+                    adjacent_lanelet.successor[0]
+                )
+            elif self.join and (
+                self.lanelet_network.predecessor_is_neighbor_of_neighbors_predecessor(
+                    lanelet
+                )
+                # and lanelet.predecessor[0] not in global_adjacent_lanelets
+            ):
+                lanelet = self._find_lanelet_by_id(lanelet.predecessor[0])
+                adjacent_lanelet = self._find_lanelet_by_id(
+                    adjacent_lanelet.predecessor[0]
+                )
+
+            else:
+                break
+
+    def _add_join_split_pair(
+        self, lanelet: ConversionLanelet, adjacent_lanelet: ConversionLanelet
+    ) -> bool:
+        """Add a pair of lanelet and adjacent lanelet to self._js_pairs.
+
+        Decide if it is advisable to add another pair to increase join/split area.
+
+        Args:
+          lanelet: Lanelet to be added.
+          adjacent_lanelet: Lanelet adjacent to lanelet to be added.
+        Returns:
+          Indicator whether this was the last pair to be added. False means
+           it is advisable to add another lanelet pair.
+        """
+        if self.split_and_join:
+            # one for split at start of lanelet
+            change_pos, change_width = lanelet.optimal_join_split_values(
+                is_split=True,
+                split_and_join=self.split_and_join,
+                reference_width=adjacent_lanelet.calc_width_at_start(),
+            )
+            self._js_pairs.append(
+                _JoinSplitPair(lanelet, adjacent_lanelet, [0, change_pos])
+            )
+            self.change_width = [change_width]
+            # one for join at the end of the lanelet
+            change_pos, change_width = lanelet.optimal_join_split_values(
+                is_split=False,
+                split_and_join=self.split_and_join,
+                reference_width=adjacent_lanelet.calc_width_at_end(),
+            )
+            self._js_pairs.append(
+                _JoinSplitPair(lanelet, adjacent_lanelet, [change_pos, lanelet.length])
+            )
+            self.change_width.append(change_width)
+            return True
+
+        adjacent_width = (
+            adjacent_lanelet.calc_width_at_start()
+            if self.split
+            else adjacent_lanelet.calc_width_at_end()
+        )
+        change_pos, change_width = lanelet.optimal_join_split_values(
+            is_split=self.split,
+            split_and_join=self.split_and_join,
+            reference_width=adjacent_width,
+        )
+        if self.change_width is not None and change_width < self.change_width:
+            # algorithm to add lanelet should terminate
+            return True
+        self.change_width = change_width
+        if self.split:
+            self._js_pairs.append(
+                _JoinSplitPair(lanelet, adjacent_lanelet, [0, change_pos])
+            )
+            if np.isclose(lanelet.length, change_pos):
+                return False
+        else:
+            self._js_pairs.append(
+                _JoinSplitPair(lanelet, adjacent_lanelet, [change_pos, lanelet.length])
+            )
+            if np.isclose(0, change_pos):
+                return False
+        return True
+
+    def _determine_main_adjacent_lanelet(self) -> ConversionLanelet:
+        """Determine which is the adjacent lanelet to the main lanelet.
+
+        Returns:
+          The corresponding adjacent lanelet.
+        """
+        lanelet = self.main_lanelet
+        potential_adjacent_lanelets = Queue()
+        checked_lanelets = 0
+        if lanelet.adj_left is not None and lanelet.adj_left_same_direction:
+            potential_adjacent_lanelets.put(
+                {"lanelet_id": lanelet.adj_left, "linking_side": "right"}
+            )
+            checked_lanelets -= 1
+        if lanelet.adj_right is not None and lanelet.adj_right_same_direction:
+            potential_adjacent_lanelets.put(
+                {"lanelet_id": lanelet.adj_right, "linking_side": "left"}
+            )
+            checked_lanelets -= 1
+
+        while potential_adjacent_lanelets.qsize() > 0:
+            adjacent_lanelet = self._check_next_adjacent_lanelet(
+                potential_adjacent_lanelets
+            )
+            checked_lanelets += 1
+
+            if checked_lanelets > 0:
+                # adjacent lanelet is not next neighbor
+                # successor of adjacent lanelet cant be used
+                self._single_lanelet_operation = True
+            if adjacent_lanelet is not None:
+                # found appropriate adjacent lanelet
+                return adjacent_lanelet
+
+        return None
+
+    def _check_next_adjacent_lanelet(
+        self, potential_adjacent_lanelets: Queue
+    ) -> ConversionLanelet:
+        """Check next lanelet if it can act as adjacent lanelet to the main lanelet.
+
+        If not, add its left and right neighbor, if they exists, to the potential_adjacent_lanelets Queue.
+
+        Args:
+          potential_adjacent_lanelets: Queue with dicts containing the pontential lanelets.
+        Returns:
+          Lanelet which fulfills the conditions if it exists, else None
+        """
+        adj_target = potential_adjacent_lanelets.get()
+        adj_lanelet = self._find_lanelet_by_id(adj_target.get("lanelet_id"))
+        linking_side = adj_target.get("linking_side")
+        return_flag = 0
+
+        if not adj_lanelet:
+            return None
+        if self.join:
+            adj_width = adj_lanelet.calc_width_at_end()
+
+        if self.split:
+            adj_width = adj_lanelet.calc_width_at_start()
+        if adj_width > 0:
+            self.linking_side = adj_target.get("linking_side")
+            return_flag = 1
+
+        if return_flag:
+            return adj_lanelet
+
+        next_adj_neighbor = (
+            adj_lanelet.adj_left if linking_side == "right" else adj_lanelet.adj_right
+        )
+        if next_adj_neighbor:
+            potential_adjacent_lanelets.put(
+                {"lanelet_id": next_adj_neighbor, "linking_side": linking_side}
+            )
+        return None
+
+
+class _JoinSplitPair:
+    "Pair of lanelet whose border is changed and its adjacent neighbor."
+
+    def __init__(self, lanelet, adjacent_lanelet, change_interval):
+        self.lanelet = lanelet
+        self.adjacent_lanelet = adjacent_lanelet
+        self.change_interval = change_interval
+
+    def move_border(
+        self, width: Tuple[float, float], linking_side: str
+    ) -> ConversionLanelet:
+        """Move border of self.lanelet.
+
+        Args:
+          width: Start and end value of new width of lanelet.
+          linking_side: Side on which the split/join happens (either "left" or "right").
+        Returns:
+          Resulting lanelet after border movement.
+        """
+        self.lanelet.move_border(
+            mirror_border=linking_side,
+            mirror_interval=self.change_interval,
+            distance=width,
+            adjacent_lanelet=self.adjacent_lanelet,
+        )
+        return self.lanelet

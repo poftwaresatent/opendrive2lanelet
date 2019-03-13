@@ -89,12 +89,6 @@ def main():
     """
     args = parse_arguments()
 
-    # if len(sys.argv) == 1 or sys.argv[1] == "--help":
-    #     print(
-    #         """Usage: convert.py input_file output_name.
-    #     If no output_name is specified, output_file has name of input_file."""
-    #     )
-    #     exit(0)
     if args.output_name:
         output_name = args.output_name
     else:

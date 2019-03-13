@@ -21,7 +21,7 @@ Or use the gui with command
 ``opendrive2lanelet-gui``.
 
 .. warning::
-   Visualizing the results of the conversion using the GUI is only helpful with small files.
+   Visualizing the results of the conversion using the GUI is only helpful with small files, because you can not zoom into the map.
    Otherwise better use the ``opendrive2lanelet-visualize`` command.
 
 If you want to inspect the result, you can use the command

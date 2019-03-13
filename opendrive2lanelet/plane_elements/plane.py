@@ -48,7 +48,7 @@ class ParametricLaneBorderGroup:
         self.outer_border_offset = outer_border_offset
 
     def calc_border_position(
-        self, border: str, s_pos: float, width_offset: float
+        self, border: str, s_pos: float, width_offset: float, is_last_pos: bool = False
     ) -> Tuple[Tuple[float, float], float]:
         """Calc vertices point of inner or outer Border.
 
@@ -64,6 +64,7 @@ class ParametricLaneBorderGroup:
           and tangential direction, too.
 
         """
+
         if border not in ("inner", "outer"):
             raise ValueError("Border specified must be 'inner' or 'outer'!")
 
@@ -72,7 +73,9 @@ class ParametricLaneBorderGroup:
             self.inner_border_offset if border == "inner" else self.outer_border_offset
         )
 
-        return select_border.calc(select_offset + s_pos, width_offset=width_offset)
+        return select_border.calc(
+            select_offset + s_pos, width_offset=width_offset, is_last_pos=is_last_pos
+        )
 
     def get_width_coefficients(self) -> list:
         """Get the width coefficients which apply to this ParametricLane.
@@ -88,8 +91,6 @@ class ParametricLane:
     reference trajectory (plan view), using lane borders
     and start/stop positions (parametric)
 
-    Args:
-
     Attributes:
       border_group (ParametricLaneBorderGroup): Reference to object which manages borders.
       id_ (str): Unique string identifier.
@@ -99,7 +100,11 @@ class ParametricLane:
     """
 
     def __init__(
-        self, id_, type_, border_group: ParametricLaneBorderGroup, length: float = None
+        self,
+        id_: str,
+        type_: str,
+        border_group: ParametricLaneBorderGroup,
+        length: float = None,
     ):
         self.border_group = border_group
         self.id_ = id_
@@ -115,9 +120,10 @@ class ParametricLane:
         Args:
           border: Which border to calculate (inner or outer).
           s_pos: Position of parameter ds where to calc the
-        Cartesian coordinates
+            Cartesian coordinates
           width_offset: Offset to add to calculated width in reference
            to the reference border. (Default value = 0.0)
+          is_last_pos: TODO
 
         Returns:
           Cartesian coordinates of point on inner border
@@ -128,7 +134,12 @@ class ParametricLane:
             border_pos = self.length - s_pos
         else:
             border_pos = s_pos
-        return self.border_group.calc_border_position(border, border_pos, width_offset)
+
+        is_last_pos = np.isclose(self.length, border_pos)
+
+        return self.border_group.calc_border_position(
+            border, border_pos, width_offset, is_last_pos
+        )
 
     def calc_width(self, s_pos: float) -> float:
         """Calc width of border at position s_pos.
@@ -176,7 +187,7 @@ class ParametricLane:
 
         """
 
-        num_steps = int(max(2, np.ceil(self.length / float(precision))))
+        num_steps = int(max(3, np.ceil(self.length / float(precision))))
 
         poses = np.linspace(0, self.length, num_steps)
 
@@ -187,7 +198,7 @@ class ParametricLane:
         last_width_difference = distance[2]
         distance_slope = (distance[1] - distance[0]) / self.length
         # calculate left and right vertices of lanelet
-        for pos in poses:
+        for i, pos in enumerate(poses):
             inner_pos = self.calc_border("inner", pos)[0]
             outer_pos = self.calc_border("outer", pos)[0]
             original_width = np.linalg.norm(inner_pos - outer_pos)
@@ -253,9 +264,10 @@ class ParametricLane:
         # if self.border_group.get_width_coefficients() == [0, 0, 0, 0]:
         #     return None, None
 
-        num_steps = int(max(2, np.ceil(self.length / float(precision))))
+        num_steps = int(max(3, np.ceil(self.length / float(precision))))
 
         poses = np.linspace(0, self.length, num_steps)
+        # last_pos_i = len(poses) - 1
 
         left_vertices = []
         right_vertices = []

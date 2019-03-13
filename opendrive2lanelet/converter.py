@@ -2,7 +2,6 @@
 
 """Module for logic behind converting OpenDrive to ParametricLanes."""
 
-
 from typing import Tuple, List
 from opendrive2lanelet.plane_elements.plane import (
     ParametricLane,
@@ -50,8 +49,17 @@ class OpenDriveConverter:
         # Lane offsets will be coeffs
         # this has to be done if the reference path has the laneoffset attribute
         # and thus is different to the geometry described in the plan_view
+        # openDRIVE lets multiple laneOffsets start at the same position
+        # but only the last one counts -> delete all previous ones
         if any(lane_offsets):
             for lane_offset in lane_offsets:
+                if lane_offset.start_pos in reference_border.width_coefficient_offsets:
+                    # offset is already there, delete previous entries
+                    idx = reference_border.width_coefficient_offsets.index(
+                        lane_offset.start_pos
+                    )
+                    del reference_border.width_coefficient_offsets[idx]
+                    del reference_border.width_coefficients[idx]
                 reference_border.width_coefficient_offsets.append(lane_offset.start_pos)
                 reference_border.width_coefficients.append(
                     lane_offset.polynomial_coefficients

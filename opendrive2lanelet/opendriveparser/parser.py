@@ -43,11 +43,11 @@ __email__ = "commonroad-i06@in.tum.de"
 __status__ = "Released"
 
 
-def parse_opendrive(rootNode) -> OpenDrive:
+def parse_opendrive(root_node) -> OpenDrive:
     """Tries to parse XML tree, returns OpenDRIVE object
 
     Args:
-      rootNode:
+      root_node:
 
     Returns:
       The object representing an OpenDrive specification.
@@ -55,22 +55,22 @@ def parse_opendrive(rootNode) -> OpenDrive:
     """
 
     # Only accept lxml element
-    if not etree.iselement(rootNode):
-        raise TypeError("Argument rootNode is not a xml element")
+    if not etree.iselement(root_node):
+        raise TypeError("Argument root_node is not a xml element")
 
     opendrive = OpenDrive()
 
     # Header
-    header = rootNode.find("header")
+    header = root_node.find("header")
     if header is not None:
         parse_opendrive_header(opendrive, header)
 
     # Junctions
-    for junction in rootNode.findall("junction"):
+    for junction in root_node.findall("junction"):
         parse_opendrive_junction(opendrive, junction)
 
     # Load roads
-    for road in rootNode.findall("road"):
+    for road in root_node.findall("road"):
         parse_opendrive_road(opendrive, road)
 
     return opendrive
@@ -123,7 +123,7 @@ def parse_opendrive_road_type(road, opendrive_xml_road_type: etree.ElementTree):
 
     """
     speed = None
-    if opendrive_xml_road_type.find("speed"):
+    if opendrive_xml_road_type.find("speed") is not None:
 
         speed = RoadTypeSpeed(
             max_speed=opendrive_xml_road_type.find("speed").get("max"),

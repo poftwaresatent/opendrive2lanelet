@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from typing import Tuple
 import math
 import numpy as np
 from opendrive2lanelet.lanelet import ConversionLanelet
@@ -86,17 +87,6 @@ class ParametricLaneGroup:
             self._geo_lengths = np.append(
                 self._geo_lengths, length + self._geo_lengths[-1]
             )
-
-    # def parametric_lanes(self) -> list:
-    #     """Get parametric lanes of ParametricLaneGroup.
-
-    #     Args:
-
-    #     Returns:
-    #       List with all ParametricLane objects of this ParametricLaneGroup.
-
-    #     """
-    #     return self.parametric_lanes
 
     @property
     def type(self) -> str:
@@ -213,10 +203,10 @@ class ParametricLaneGroup:
 
     def to_lanelet_with_mirroring(
         self,
-        mirror_border,
-        distance,
-        mirror_interval,
-        adjacent_lanelet,
+        mirror_border: str,
+        distance: Tuple[float, float],
+        mirror_interval: Tuple[float, float],
+        adjacent_lanelet: ConversionLanelet,
         precision: float = 0.5,
     ):
         """Convert a ParametricLaneGroup to a Lanelet with mirroring one of the borders.
@@ -380,11 +370,15 @@ class ParametricLaneGroup:
 
         return total_maximum
 
-    def first_zero_width_change_position(self, reverse: bool = False) -> float:
+    def first_zero_width_change_position(
+        self, reverse: bool = False, reference_width: float = 0.0
+    ) -> float:
         """Get the earliest point of the ParametricLaneGroup where the width change is zero.
 
         Args:
           reverse: True if checking should start from end of lanelet.
+          reference_width: Width for which width at zero width change position has
+            to be greater as.
 
         Returns:
           Position of ParametricLaneGroup (in curve parameter ds) where width change is zero.
@@ -392,7 +386,7 @@ class ParametricLaneGroup:
         s_pos = 0
         positions = []
 
-        total_maximum = self.maximum_width()
+        # total_maximum = self.maximum_width()
 
         for plane in self.parametric_lanes:
             zero_change_positions = plane.zero_width_change_positions()
@@ -403,14 +397,18 @@ class ParametricLaneGroup:
         if reverse:
             positions = list(reversed(positions))
 
+        # if lanelet has zero width change and its width
+        # is either near the maximum or it is greater than the reference width
+        # the position can be used
         for pos, val in positions:
-            if val > 0.6 * total_maximum:
+            if val > 0.9 * reference_width or val > 0.9 * self.maximum_width():
                 if (pos == 0.0 and not reverse) or (pos == self.length and reverse):
                     continue
                 return pos, val
 
         return None, None
 
+    # FIXME: unused, candidate for deletion
     def first_width_change_reversal_point(self, reverse: bool = False) -> float:
         """Get the first point where width change is zero or point is between two ParametricLanes.
 

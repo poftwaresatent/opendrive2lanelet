@@ -108,11 +108,10 @@ class Network:
           filter_types: types of ParametricLane objects to be filtered. (Default value = None)
 
         Returns:
-
+          The converted LaneletNetwork object.
         """
 
         # Convert groups to lanelets
-
         lanelet_network = ConversionLaneletNetwork()
 
         for parametric_lane in self._planes:
@@ -125,33 +124,6 @@ class Network:
             lanelet.successor = self._link_index.get_successors(parametric_lane.id_)
 
             lanelet_network.add_lanelet(lanelet)
-
-        # total_faster_cache = 0
-        # total_faster_normal = 0
-
-        # for plane_group in self._planes:
-        #     for plane in plane_group.parametric_lanes:
-        #         if isinstance(plane.border_group.inner_border.reference, PlanView):
-        #             plan_view = plane.border_group.inner_border.reference
-        #             cache_time = plan_view.cache_time
-        #             normal_time = plan_view.normal_time
-
-        #             # if len(plan_view._geometries) < 2:
-        #             #     continue
-        #             # if 0 < cache_time < normal_time:
-        #             #     total_faster_cache += 1
-        #             # else:
-        #             #     total_faster_normal += 1
-        #             total_faster_cache += cache_time
-        #             if cache_time > 0:
-        #                 total_faster_normal += normal_tim
-
-        #             # print("Cached calc time: {}".format(cache_time))
-        #             # print("Normal calc time: {}".format(normal_time))
-        #             # print(plan_view._geometries)
-        #             # print("")
-        # print("Total comparable  cache: {}".format(total_faster_cache))
-        # print("Total comparable normal: {}".format(total_faster_normal))
 
         # prune because some
         # successorIds get encoded with a non existing successorID

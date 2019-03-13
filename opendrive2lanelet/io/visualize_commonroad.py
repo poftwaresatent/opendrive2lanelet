@@ -1,32 +1,38 @@
 # -*- coding: utf-8 -*-
 
-import sys
+import argparse
 import matplotlib.pyplot as plt
 
 from commonroad.common.file_reader import CommonRoadFileReader
 from commonroad.visualization.draw_dispatch_cr import draw_object
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("xml_file", help="CommonRoad XML file")
+    parser.add_argument(
+        "-s", "--show-labels", action="store_true", help="show labels of lanelets"
+    )
+    # TODO: add plot center as argument
+    args = parser.parse_args()
+    return args
+
+
 def main():
     """Short helper file to visualize an xml file
     as a command line tool.
 
-    Args:
-
-    Returns:
-
     """
-    if len(sys.argv) == 1 or sys.argv[1] == "--help":
-        print(
-            """Usage: convert.py input_file output_name.
-        If no output_name is specified, output_file has name of input_file."""
-        )
-        exit(0)
 
-    filename = sys.argv[1]
+    args = parse_arguments()
+
+    filename = args.xml_file
 
     scenario, _ = CommonRoadFileReader(filename).open()
 
+    draw_params = {
+        "scenario": {"lanelet_network": {"lanelet": {"show_label": args.show_labels}}}
+    }
     # temporary fix to get a plotable view of the scenario
     plot_center = scenario.lanelet_network.lanelets[0].left_vertices[0]
     plt.style.use("classic")
@@ -39,7 +45,7 @@ def main():
         plot_center[1] - plot_displacement_y,
         plot_center[1] + plot_displacement_y,
     ]
-    draw_object(scenario, plot_limits=plot_limits)
+    draw_object(scenario, plot_limits=plot_limits, draw_params=draw_params)
     plt.show()
 
 

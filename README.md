@@ -44,6 +44,8 @@ Start the GUI with ```opendrive2lanelet-gui```
 
 Execute ```opendrive2lanelet-convert input_file.xodr -o output_file.xml```
 
+If you want to visualize the Commonroad file, use the ```opendrive2lanelet-visualize``` command.
+
 ### Using the library in your own scripts
 
 ```python

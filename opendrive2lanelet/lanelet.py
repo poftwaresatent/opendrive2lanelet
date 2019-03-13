@@ -17,6 +17,8 @@ __maintainer__ = "Benjamin Orthen"
 __email__ = "commonroad-i06@in.tum.de"
 __status__ = "Released"
 
+optimal_join_split_factor = 20
+
 
 class ConversionLanelet(Lanelet):
     """Change some properties of the Lanelet class so that it can be used
@@ -277,20 +279,28 @@ class ConversionLanelet(Lanelet):
         """
         return self.parametric_lane_group.has_zero_width_everywhere()
 
-    def first_zero_width_change_position(self, reverse: bool = False) -> float:
+    def first_zero_width_change_position(
+        self, reverse: bool = False, reference_width: float = 0.0
+    ) -> float:
         """Get the earliest point of the lanelet where the width change is zero.
 
         Args:
           reverse: True if checking starts from the end of the lanelet.
-
+          reference_width: Width for which width at zero width change position has
+            to be greater as.
         Returns:
           Position of lanelet (in curve parameter ds) where width change is zero.
         """
-        return self.parametric_lane_group.first_zero_width_change_position(reverse)
+        return self.parametric_lane_group.first_zero_width_change_position(
+            reverse, reference_width
+        )
 
-    # TODO: consider possiblity that optimal position is at
-    # point between two ParametricLanes
-    def optimal_join_split_values(self, is_split: bool, split_and_join: bool):
+    def maximum_width(self) -> float:
+        return self.parametric_lane_group.maximum_width()
+
+    def optimal_join_split_values(
+        self, is_split: bool, split_and_join: bool, reference_width: float
+    ):
         """Calculate an optimal value, where the lanelet split or join starts
           or ends, respectively.
 
@@ -298,14 +308,16 @@ class ConversionLanelet(Lanelet):
           is_split: True if lanelet splits from another lanelet, otherwise
             False if it is a join.
           split_and_join: True if lanelet has a split at the start and join at the end.
+          reference_width: Width for which width at zero width change position has
+            to be greater as.
         """
 
         merge_pos, merge_width = self.first_zero_width_change_position(
-            reverse=(not is_split)
+            reverse=(not is_split), reference_width=reference_width
         )
         if merge_pos is None:
             merge_pos = self.length if is_split else 0
-            merge_width = self.calc_width(merge_pos)
+            # merge_width = self.calc_width(merge_pos)
 
         if is_split:
             # if both a split at the start and merge at the end
@@ -316,6 +328,12 @@ class ConversionLanelet(Lanelet):
             if split_and_join and merge_pos < 0.5 * self.length:
                 merge_pos = 0.55 * self.length
 
+        # TODO: solve problem with merges which are too long
+        # avg_width = 0.5 * (reference_width + self.maximum_width())
+        # if is_split and merge_pos > optimal_join_split_factor * avg_width:
+        # merge_pos = optimal_join_split_factor * avg_width
+        # elif merge_pos < self.length - optimal_join_split_factor * avg_width:
+        # merge_pos = self.length - optimal_join_split_factor * avg_width
         merge_width = self.calc_width(merge_pos)
         return merge_pos, merge_width
 

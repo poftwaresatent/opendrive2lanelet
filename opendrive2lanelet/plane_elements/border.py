@@ -32,8 +32,8 @@ class Border:
 
         self.reference = None
 
-    def _get_width_index(self, s_pos: float) -> int:
-        """Get the index of the width which apply at position s_pos.
+    def _get_width_index(self, s_pos: float, is_last_pos: bool) -> int:
+        """Get the index of the width which applies at position s_pos.
 
         Args:
           s_pos: Position on border in curve_parameter ds.
@@ -44,12 +44,15 @@ class Border:
             (
                 self.width_coefficient_offsets.index(n)
                 for n in self.width_coefficient_offsets[::-1]
-                if n <= s_pos
+                if (
+                    (n <= s_pos and (not is_last_pos or s_pos == 0))
+                    or (n < s_pos and is_last_pos)
+                )
             ),
             len(self.width_coefficient_offsets),
         )
 
-    def get_next_width_coeffs(self, s_pos: float) -> list:
+    def get_next_width_coeffs(self, s_pos: float, is_last_pos: bool = False) -> list:
         """Get width coefficients which apply at position s_pos.
 
         Args:
@@ -59,13 +62,13 @@ class Border:
           An array with coefficients [a, b, c, d] for the polynomial w = a + b*ds + c*ds² + d*ds³
 
         """
-        width_idx = self._get_width_index(s_pos)
+        width_idx = self._get_width_index(s_pos, is_last_pos)
         return self.width_coefficients[width_idx]
 
     # NOTE: might by more efficient to calculate each border once
     # instead of recalculating them over and over.
     @lru_cache(maxsize=200000)
-    def calc(self, s_pos: float, width_offset: float = 0.0):
+    def calc(self, s_pos: float, width_offset: float = 0.0, is_last_pos: bool = False):
         """Calculate the Cartesian coordinates and the tangential direction of
         the border by calculating position of reference border at s_pos
         and then adding the width in orthogonal direction to the reference position.
@@ -84,14 +87,19 @@ class Border:
         if np.isclose(s_pos, 0):
             s_pos = 0
 
-        ref_coord, tang_angle = self.reference.calc(self.ref_offset + s_pos)
+        try:
+            ref_coord, tang_angle = self.reference.calc(
+                self.ref_offset + s_pos, is_last_pos=is_last_pos
+            )
+        except TypeError:
+            ref_coord, tang_angle = self.reference.calc(self.ref_offset + s_pos)
 
         if not self.width_coefficients or not self.width_coefficient_offsets:
             raise Exception("No entries for width definitions.")
 
         # Find correct coefficients
         # find which width segment is at s_pos
-        width_idx = self._get_width_index(s_pos)
+        width_idx = self._get_width_index(s_pos, is_last_pos)
 
         # Calculate width at s_pos
         distance = (
