@@ -12,7 +12,8 @@ We provide the code for an OpenDRIVE ([www.opendrive.org](http://www.opendrive.o
 ### Installing from source
 
 ```bash
-git clone https://gitlab.com/cps_public/opendrive2lanelet.git
+git clone https://gitlab.lrz.de/tum-cps/opendrive2lanelet.git
+cd opendrive2lanelet
 python setup.py install
 ```
 
