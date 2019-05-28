@@ -20,6 +20,37 @@ __email__ = "commonroad-i06@in.tum.de"
 __status__ = "Released"
 
 
+def convert_to_new_lanelet_id(old_lanelet_id: str, ids_assigned: dict) -> int:
+    """Convert the old lanelet ids (format 501.1.-1.-1) to newer,
+    simpler ones (100, 101 etc.).
+
+    Do this by consecutively assigning
+    numbers, starting at 100, to the old_lanelet_id strings. Save the
+    assignments in the dict which is passed to the function as ids_assigned.
+
+    Args:
+      old_lanelet_id: Old id with format "501.1.-1.-1".
+      ids_assigned: Dict with all previous assignments
+
+    Returns:
+      The new lanelet id.
+
+    """
+
+    starting_lanelet_id = 100
+
+    if old_lanelet_id in ids_assigned.keys():
+        new_lanelet_id = ids_assigned[old_lanelet_id]
+    else:
+        try:
+            new_lanelet_id = max(ids_assigned.values()) + 1
+        except ValueError:
+            new_lanelet_id = starting_lanelet_id
+        ids_assigned[old_lanelet_id] = new_lanelet_id
+
+    return new_lanelet_id
+
+
 class ConversionLaneletNetwork(LaneletNetwork):
     """Add functions to LaneletNetwork which
     further enable it to modify its Lanelets."""
@@ -63,6 +94,38 @@ class ConversionLaneletNetwork(LaneletNetwork):
 
         """
         return self._lanelets.get(lanelet_id)
+
+    def convert_all_lanelet_ids(self):
+        """Convert lanelet ids to numbers which comply with the Commonroad specification.
+
+        These numbers have to be positive integers.
+        """
+
+        new_lanelet_ids_assigned = {}
+
+        for lanelet in self.lanelets:
+            lanelet.description = lanelet.lanelet_id
+            self.remove_lanelet(lanelet.lanelet_id)
+            lanelet.lanelet_id = convert_to_new_lanelet_id(
+                lanelet.lanelet_id, new_lanelet_ids_assigned
+            )
+            lanelet.predecessor = [
+                convert_to_new_lanelet_id(x, new_lanelet_ids_assigned)
+                for x in lanelet.predecessor
+            ]
+            lanelet.successor = [
+                convert_to_new_lanelet_id(x, new_lanelet_ids_assigned)
+                for x in lanelet.successor
+            ]
+            if lanelet.adj_left is not None:
+                lanelet.adj_left = convert_to_new_lanelet_id(
+                    lanelet.adj_left, new_lanelet_ids_assigned
+                )
+            if lanelet.adj_right is not None:
+                lanelet.adj_right = convert_to_new_lanelet_id(
+                    lanelet.adj_right, new_lanelet_ids_assigned
+                )
+            self.add_lanelet(lanelet)
 
     def prune_network(self):
         """Remove references in predecessor, successor etc. to
@@ -287,6 +350,54 @@ class ConversionLaneletNetwork(LaneletNetwork):
             lanelet.predecessor.append(predecessor_id)
             predecessor = self.find_lanelet_by_id(predecessor_id)
             predecessor.successor.append(lanelet.lanelet_id)
+
+    def set_adjacent_left(
+        self, lanelet: ConversionLanelet, adj_left_id: str, same_direction: bool = True
+    ):
+        """Set the adj_left of a lanelet to a new value.
+
+        Update also the lanelet which is the new adjacent left to
+        have new adjacent right.
+
+        Args:
+          lanelet: Lanelet which adjacent left should be updated.
+          adj_left_id: New value for update.
+          same_direction: New adjacent lanelet has same direction as lanelet.
+        Returns:
+          True if operation successful, else false.
+        """
+        new_adj_left = self.find_lanelet_by_id(adj_left_id)
+        if not new_adj_left:
+            return False
+        lanelet.adj_left = adj_left_id
+        lanelet.adj_left_same_direction = same_direction
+        new_adj_left.adj_right = lanelet.lanelet_id
+        new_adj_left.adj_right_same_direction = same_direction
+        return True
+
+    def set_adjacent_right(
+        self, lanelet: ConversionLanelet, adj_right_id: str, same_direction: bool = True
+    ):
+        """Set the adj_right of a lanelet to a new value.
+
+        Update also the lanelet which is the new adjacent right to
+        have new adjacent left.
+
+        Args:
+          lanelet: Lanelet which adjacent right should be updated.
+          adj_right_id: New value for update.
+          same_direction: New adjacent lanelet has same direction as lanelet.
+        Returns:
+          True if operation successful, else false.
+        """
+        new_adj_right = self.find_lanelet_by_id(adj_right_id)
+        if not new_adj_right:
+            return False
+        lanelet.adj_right = adj_right_id
+        lanelet.adj_right_same_direction = same_direction
+        new_adj_right.adj_left = lanelet.lanelet_id
+        new_adj_right.adj_left_same_direction = same_direction
+        return True
 
     def check_concatenation_potential(
         self, lanelet: ConversionLanelet, adjacent_direction: str

@@ -22,9 +22,10 @@ optimal_join_split_factor = 20
 
 class ConversionLanelet(Lanelet):
     """Change some properties of the Lanelet class so that it can be used
-    to convert from OpenDrive to Lanelet. This means especially that lanelet_ids
+    to conversions to Lanelet. This means especially that lanelet_ids
     can be other types than a natural number and that these ids can be changed
     more than once.
+    Also adjacent neighbors and pre- and successor can be changed more than onc.
 
     Args:
 
@@ -328,12 +329,6 @@ class ConversionLanelet(Lanelet):
             if split_and_join and merge_pos < 0.5 * self.length:
                 merge_pos = 0.55 * self.length
 
-        # TODO: solve problem with merges which are too long
-        # avg_width = 0.5 * (reference_width + self.maximum_width())
-        # if is_split and merge_pos > optimal_join_split_factor * avg_width:
-        # merge_pos = optimal_join_split_factor * avg_width
-        # elif merge_pos < self.length - optimal_join_split_factor * avg_width:
-        # merge_pos = self.length - optimal_join_split_factor * avg_width
         merge_width = self.calc_width(merge_pos)
         return merge_pos, merge_width
 
