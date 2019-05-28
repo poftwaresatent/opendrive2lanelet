@@ -10,7 +10,7 @@ with open(f"{setup_dir}/README.md", "r") as fh:
 
 setup(
     name="opendrive2lanelet",
-    version="1.0.2",
+    version="1.0.3",
     description="Parser and converter from OpenDRIVE to lanelets",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -21,18 +21,20 @@ setup(
     packages=find_packages(exclude=("test",)),
     include_package_data=True,
     install_requires=[
-        "numpy>=1.15.2",
-        "lxml>=4.2.5",
-        "scipy>=1.1.0",
-        "commonroad-io>=2018.1",
+        "numpy>=1.16.3",
+        "lxml>=4.3.3",
+        "commonroad-io>=2019.1",
+        "pyproj>=2.1.3",
+        "scipy>=1.3.0",
     ],
     extras_require={"GUI": ["PyQt5>=5.11.3", "matplotlib>=3.0.0"]},
     python_requires=">=3.6",
     entry_points={
         "console_scripts": [
-            "opendrive2lanelet-convert=opendrive2lanelet.io.convert:main",
+            "opendrive2lanelet-convert=opendrive2lanelet.io.opendrive_convert:main",
             "opendrive2lanelet-gui=opendrive2lanelet.io.gui:main",
             "opendrive2lanelet-visualize=opendrive2lanelet.io.visualize_commonroad:main",
+            "osm-convert=opendrive2lanelet.io.osm_convert:main",
         ]
     },
     classifiers=[

@@ -9,18 +9,17 @@ import os
 import sys
 import argparse
 
-# import matplotlib.pyplot as plt
 from lxml import etree
 from commonroad.scenario.scenario import Scenario
 
-# from commonroad.visualization.draw_dispatch_cr import draw_object
+from commonroad.common.file_writer import CommonRoadFileWriter
 
 from opendrive2lanelet.opendriveparser.elements.opendrive import OpenDrive
 from opendrive2lanelet.opendriveparser.parser import parse_opendrive
 from opendrive2lanelet.network import Network
-from opendrive2lanelet.io.extended_file_writer import ExtendedCommonRoadFileWriter
+from opendrive2lanelet.osm.lanelet2osm import L2OSMConverter
 
-__author__ = "Benjamin Orthen, Stefan Urban"
+__author__ = "Benjamin Orthen"
 __copyright__ = "TUM Cyber-Physical Systems Group"
 __credits__ = ["Priority Program SPP 1835 Cooperative Interacting Automobiles"]
 __version__ = "1.0.2"
@@ -38,31 +37,10 @@ def parse_arguments():
         action="store_true",
         help="overwrite existing file if it has same name as converted file",
     )
+    parser.add_argument("--osm", help="use proj-string to convert directly to osm")
     parser.add_argument("-o", "--output-name", help="specify name of outputed file")
     args = parser.parse_args()
     return args
-
-
-# def visualize(scenario: Scenario):
-#     """Visualize a created scenario by plotting it
-#     with matplotlib.
-
-#     Args:
-#       scenario: The scenario which should be plotted.
-
-#     Returns:
-#       None
-
-#     """
-
-#     # set plt settings
-#     plt.style.use("classic")
-#     plt.figure(figsize=(8, 4.5))
-#     plt.gca().axis("equal")
-#     # plot_limits = [-80, 80, -60, 30]
-#     # plot scenario
-#     draw_object(scenario)
-#     plt.show()
 
 
 def convert_opendrive(opendrive: OpenDrive) -> Scenario:
@@ -81,7 +59,6 @@ def convert_opendrive(opendrive: OpenDrive) -> Scenario:
 
 def main():
     """Helper function to convert an xodr to a lanelet file
-    script uses sys.argv[1] as file to be converted
 
     """
     args = parse_arguments()
@@ -90,7 +67,9 @@ def main():
         output_name = args.output_name
     else:
         output_name = args.xodr_file.rpartition(".")[0]
-        output_name = f"{output_name}.xml"  # only name of file
+        output_name = (
+            f"{output_name}.osm" if args.osm else f"{output_name}.xml"
+        )  # only name of file
 
     if os.path.isfile(output_name) and not args.force_overwrite:
         print(
@@ -105,18 +84,27 @@ def main():
     scenario = convert_opendrive(opendrive)
 
     if not args.osm:
-        writer = ExtendedCommonRoadFileWriter(
-            scenario, source="OpenDRIVE 2 Lanelet Converter"
+        writer = CommonRoadFileWriter(
+            scenario=scenario,
+            planning_problem_set=None,
+            author="",
+            affiliation="",
+            source="OpenDRIVE 2 Lanelet Converter",
+            tags="",
         )
 
         with open(f"{output_name}", "w") as file_out:
             writer.write_scenario_to_file_io(file_out)
 
     else:
-        l2osm = OSMConverter(args.osm)
+        l2osm = L2OSMConverter(args.osm)
         osm = l2osm(scenario)
         with open(f"{output_name}", "w") as file_out:
-            file_out.write(etree.tostring(osm, encoding="unicode", pretty_print=True))
+            file_out.write(
+                etree.tostring(
+                    osm, xml_declaration=True, encoding="UTF-8", pretty_print=True
+                )
+            )
 
 
 if __name__ == "__main__":
