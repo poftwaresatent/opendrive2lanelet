@@ -80,7 +80,6 @@ def main():
 
     with open("{}".format(args.xodr_file), "r") as file_in:
         opendrive = parse_opendrive(etree.parse(file_in).getroot())
-
     scenario = convert_opendrive(opendrive)
 
     if not args.osm:
@@ -90,7 +89,7 @@ def main():
             author="",
             affiliation="",
             source="OpenDRIVE 2 Lanelet Converter",
-            tags="",
+            tags=opendrive.header.geo_reference,
         )
 
         with open(f"{output_name}", "w") as file_out:

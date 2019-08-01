@@ -7,7 +7,7 @@ for conversion from the opendrive format."""
 from typing import Tuple
 
 import numpy as np
-from commonroad.scenario.lanelet import Lanelet
+from commonroad.scenario.lanelet import Lanelet, LineMarking
 
 __author__ = "Benjamin Orthen"
 __copyright__ = "TUM Cyber-Physical Systems Group"
@@ -177,6 +177,30 @@ class ConversionLanelet(Lanelet):
     def adj_right_same_direction(self, same: bool):
         # pylint: disable=W0201
         self._adj_right_same_direction = same
+
+    @property
+    def line_marking_left_vertices(self) -> str:
+        """Set or get line marking of the left vertices."""
+        return self._line_marking_left_vertices
+
+    @line_marking_left_vertices.setter
+    def line_marking_left_vertices(self, type:str):
+        if type == 'solid':
+            self._line_marking_left_vertices = LineMarking.SOLID
+        elif type == 'dashed' or type == 'broken':
+            self._line_marking_left_vertices = LineMarking.DASHED
+
+    @property
+    def line_marking_right_vertices(self) -> str:
+        """Set or get line marking of the right vertices."""
+        return self._line_marking_right_vertices
+
+    @line_marking_right_vertices.setter
+    def line_marking_right_vertices(self, type:str):
+        if type == 'solid':
+            self._line_marking_right_vertices = LineMarking.SOLID
+        elif type == 'dashed' or type == 'broken':
+            self._line_marking_right_vertices = LineMarking.DASHED
 
     def concatenate(
         self, lanelet_conc: "ConversionLanelet", extend_plane_group: bool = True

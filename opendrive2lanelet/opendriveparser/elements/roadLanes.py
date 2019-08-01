@@ -119,6 +119,7 @@ class Lane:
         self._borders = []
         self.lane_section = lane_section
         self.has_border_record = False
+        self._road_mark = None
 
     @property
     def parentRoad(self):
@@ -203,6 +204,16 @@ class Lane:
     def borders(self):
         """ """
         return self._borders
+
+    @property
+    def road_mark(self):
+        """ """
+        return self._road_mark
+
+    @road_mark.setter
+    def road_mark(self, value):
+        self._road_mark = value
+
 
 
 class LaneLink:

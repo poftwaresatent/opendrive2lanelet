@@ -110,12 +110,14 @@ class ParametricLane:
         type_: str,
         border_group: ParametricLaneBorderGroup,
         length: float = None,
+        road_mark: str = None,
     ):
         self.border_group = border_group
         self.id_ = id_
         self.type_ = type_
         self.length = length
         self.reverse = False
+        self.road_mark = road_mark
 
     def calc_border(
         self, border: str, s_pos: float, width_offset: float = 0.0

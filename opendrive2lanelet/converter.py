@@ -170,6 +170,7 @@ class OpenDriveConverter:
             type_=lane.type,
             length=width.length,
             border_group=border_group,
+            road_mark=lane.road_mark,
         )
         return parametric_lane
 

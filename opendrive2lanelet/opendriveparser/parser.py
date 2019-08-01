@@ -398,6 +398,8 @@ def parse_opendrive_road_lane_section(newRoad, lane_section_id, lane_section):
 
             # Road Marks
             # TODO implementation
+            if lane.find("roadMark") is not None:
+                new_lane.road_mark = str(lane.find("roadMark").get("type"))
 
             # Material
             # TODO implementation

@@ -7,6 +7,7 @@ from typing import Tuple
 import math
 
 import numpy as np
+from lxml import etree
 
 from opendrive2lanelet.lanelet import ConversionLanelet
 
@@ -169,6 +170,8 @@ class ParametricLaneGroup:
 
         # Adjacent lanes
         self._set_adjacent_lanes(lanelet)
+
+        self._set_bound_road_mark(lanelet)
 
         return lanelet
 
@@ -362,6 +365,13 @@ class ParametricLaneGroup:
         if self.outer_neighbour is not None:
             lanelet.adj_right = self.outer_neighbour
             lanelet.adj_right_same_direction = True
+
+    def _set_bound_road_mark(self, lanelet: ConversionLanelet):
+        """Sets roadMark of each bound in lanelet. """
+        if self.parametric_lanes[0].road_mark:
+            lanelet.line_marking_right_vertices = self.parametric_lanes[0].road_mark
+        # if len(self.parametric_lanes) > 1 and self.parametric_lanes[-1].road_mark:
+        #     lanelet.line_marking_left_vertices = self.parametric_lanes[-1].road_mark
 
     def maximum_width(self) -> float:
         """Get the maximum width of the lanelet.
